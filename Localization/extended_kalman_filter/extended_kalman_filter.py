@@ -120,18 +120,44 @@ def jacob_h():
 
 
 def ekf_estimation(xEst, PEst, z, u):
+    '''Extended Kalman filter measurement update, in five steps.
+
+     1. Predict state:
+         xPred = f(xEst, u)
+     2. Predict covariance:
+         PPred = jF @ PEst @ jF.T + Q
+     3. Compute innovation and its covariance:
+         y = z - h(xPred)
+         S = jH @ PPred @ jH.T + R
+     4. Compute Kalman gain:
+         K = PPred @ jH.T @ inv(S)
+     5. Correct state and covariance:
+         xEst = xPred + K @ y
+         PEst = (I - K @ jH) @ PPred
+
+     Here f is the motion model, h is the observation model, Q is process
+     noise covariance, and R is observation noise covariance. jF and jH are
+     their Jacobians evaluated at the predicted operating point.
+     '''
     #  Predict
+    #xPred: 先验预测状态
     xPred = motion_model(xEst, u)
     jF = jacob_f(xEst, u)
+    #PPred: 先验误差协方差矩阵
     PPred = jF @ PEst @ jF.T + Q
 
     #  Update
     jH = jacob_h()
     zPred = observation_model(xPred)
+    #y: 新息
     y = z - zPred
+    #S: 新息协方差矩阵 
     S = jH @ PPred @ jH.T + R
+    #K： 卡尔曼增益
     K = PPred @ jH.T @ np.linalg.inv(S)
+    #xEst: 后验状态 
     xEst = xPred + K @ y
+    #PEst: 后验误差协方差矩阵
     PEst = (np.eye(len(xEst)) - K @ jH) @ PPred
     return xEst, PEst
 
