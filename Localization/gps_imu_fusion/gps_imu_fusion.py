@@ -57,16 +57,50 @@ def motion_jacobians(state, imu, dt):
     rot = rotation(state[4])
     bias = state[5:7] if len(state) == 8 else np.zeros(2)
     acceleration = rot @ (imu[:2] - bias)
+    '''
+    机体加速度：[bx, by]
+    旋转矩阵：
+    [cos(yaw), -sin(yaw)]
+    [sin(yaw), cos(yaw)]
+    世界坐标系下的加速度: acceleration = [ax, ay] = R * [bx, by]
+    ax = cos(yaw)bx - sin(yaw)by, ay =sin(yaw)bx + cos(yaw)by
+    对yaw求导:
+    dax/dyaw = -sin(yaw)bx - cos(yaw)by = -ay
+    day/dyaw = cos(yaw)bx - sin(yaw)by = ax
+    于是得到：
+    yaw_derivative = np.array([-acceleration[1], acceleration[0]])
+    '''
     yaw_derivative = np.array([-acceleration[1], acceleration[0]])
     f = np.eye(len(state))
     f[:2, 2:4] = np.eye(2) * dt
     f[:2, 4] = 0.5 * yaw_derivative * dt**2
     f[2:4, 4] = yaw_derivative * dt
     if len(state) == 8:
+        '''
+        世界坐标系下的加速度对偏置的导数为：
+        acceleration = rot @ (imu[:2] - bias)
+        position_next = position + velocity * dt + 0.5 * acceleration * dt**2 = position + velocity * dt + 0.5 * rot * (imu[:2] - bias) * dt^2
+        velocity_next = velocity + acceleration * dt = velocity + rot * (imu[:2] - bias) * dt
+        yaw_next = yaw + (imu[2] - bias_yaw) * dt
+        于是：
+        位置对偏置求导：
+        dposition/dbias = 0.5 * dacceleration/dbias * dt^2 = -0.5 * rot * dt^2
+        速度对偏置求导：
+        dvelocity/dbias = dacceleration/dbias * dt = -rot * dt
+        yaw对偏置求导:
+        dyaw/dbias = -dt
+        '''
         f[:2, 5:7] = -0.5 * rot * dt**2
         f[2:4, 5:7] = -rot * dt
         f[4, 7] = -dt
-
+    '''
+    position_next对imu的偏导数为：
+    dposition/dimu = 0.5 * rot * dt**2
+    velocity_next对imu的偏导数为：
+    dvelocity/dimu = rot * dt
+    yaw_next对imu的偏导数为：
+    dyaw/dimu = [0, 0, dt]
+    '''
     g = np.zeros((len(state), 3))
     g[:2, :2] = 0.5 * rot * dt**2
     g[2:4, :2] = rot * dt
@@ -85,7 +119,17 @@ def predict(state, covariance, imu, dt=DT):
     process_noise = g @ np.diag(IMU_STD**2) @ g.T
     if len(state) == 8:
         process_noise[5:8, 5:8] += np.diag(BIAS_RW_STD**2) * dt
+    ''' 
+    PPred = jF @ PEst @ jF.T + Q
+    把 IMU 噪声记为向量w,它的协方差是
+    E[w w^T] = QIMU
+    IMU噪声对下一步状态的影响gw, 其中g是状态对IMU噪声的雅可比矩阵
+    QState = E[gw (gw)^T] = E[g w w^T g^T] = g QIMU g^T  
+    '''
     predicted_covariance = f @ covariance @ f.T + process_noise
+    '''
+    协方差在数学上应满足对称性:P = P^T.但浮点计算可能产生很小的数值误差，让矩阵两侧略有不同。因此代码用 (predicted_covariance + predicted_covariance.T) / 2.0
+    '''
     return motion_model(state, imu, dt), (
         predicted_covariance + predicted_covariance.T) / 2.0
 
@@ -100,11 +144,15 @@ def update_gps(state, covariance, position):
     h[:, :2] = np.eye(2)
     r = np.eye(2) * GPS_STD**2
     innovation_covariance = h @ covariance @ h.T + r
+    #gain: 卡尔曼滤波增益
     gain = np.linalg.solve(innovation_covariance, h @ covariance).T
     updated = state + gain @ (position - h @ state)
     updated[4] = wrap_angle(updated[4])
     # Joseph form preserves covariance symmetry and positive semidefiniteness.
+    #residual: 残差矩阵 (I - K @ H)
     residual = np.eye(len(state)) - gain @ h
+    #标准协方差更新:PEst = residual @ PPred
+    #Joseph 协方差更新:PEst = residual @ PPred @ residual.T + K @ R @ K.T
     updated_covariance = residual @ covariance @ residual.T + gain @ r @ gain.T
     return updated, (updated_covariance + updated_covariance.T) / 2.0
 
