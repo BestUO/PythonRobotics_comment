@@ -22,14 +22,14 @@ Q = np.diag([
     0.1,  # variance of location on x-axis
     0.1,  # variance of location on y-axis
     np.deg2rad(1.0),  # variance of yaw angle
-    0.4,  # variance of velocity
+    1.0,  # variance of velocity
     0.1  # variance of scale factor
 ]) ** 2  # predict state covariance
-R = np.diag([0.1, 0.1]) ** 2  # Observation x,y position covariance
+R = np.diag([1.0, 1.0]) ** 2  # Observation x,y position covariance
 
 #  Simulation parameter
-INPUT_NOISE = np.diag([0.1, np.deg2rad(5.0)]) ** 2
-GPS_NOISE = np.diag([0.05, 0.05]) ** 2
+INPUT_NOISE = np.diag([1, np.deg2rad(30)]) ** 2
+GPS_NOISE = np.diag([0.5, 0.5]) ** 2
 
 DT = 0.1  # time tick [s]
 SIM_TIME = 50.0  # simulation time [s]
@@ -153,6 +153,7 @@ def main():
     PEst = np.eye(5)
 
     xDR = np.zeros((5, 1))  # Dead reckoning
+    xDR[4, 0] = 1.0
 
     # history
     hxEst = xEst
